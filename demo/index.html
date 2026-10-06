@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Doorstep demo</title>
+<style>
+  :root {
+    --primary-color: #03a9f4;
+    --ha-card-border-radius: 12px;
+    font-family: Roboto, "Noto Sans", -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body { margin: 0; }
+  body.light {
+    --card-background-color: #ffffff;
+    --primary-text-color: #141414;
+    --secondary-text-color: #727272;
+    --divider-color: rgba(0, 0, 0, .12);
+    --lovelace-background: #f2f2f2;
+  }
+  body.dark {
+    --card-background-color: #1c1c1c;
+    --primary-text-color: #e1e1e1;
+    --secondary-text-color: #9b9b9b;
+    --divider-color: rgba(225, 225, 225, .12);
+    --lovelace-background: #111111;
+  }
+  body { background: var(--lovelace-background); color: var(--primary-text-color); }
+  body.wallpaper {
+    background:
+      radial-gradient(60% 80% at 15% 20%, #3d6c8c 0%, transparent 60%),
+      radial-gradient(50% 70% at 85% 30%, #7a4f7f 0%, transparent 60%),
+      radial-gradient(70% 60% at 60% 95%, #2f5d50 0%, transparent 65%),
+      linear-gradient(160deg, #1d2633, #12161d);
+  }
+  body.wallpaper.light {
+    background:
+      radial-gradient(60% 80% at 15% 20%, #b9d4e8 0%, transparent 60%),
+      radial-gradient(50% 70% at 85% 30%, #e6c9df 0%, transparent 60%),
+      radial-gradient(70% 60% at 60% 95%, #c7e3d6 0%, transparent 65%),
+      linear-gradient(160deg, #eef1f5, #dfe5ec);
+  }
+  .stage { padding: 24px; box-sizing: border-box; }
+  .slot { box-sizing: border-box; }
+</style>
+</head>
+<body>
+<div class="stage"><div class="slot" id="slot"></div></div>
+<script>
+const q = new URLSearchParams(location.search);
+
+if (q.get('fonts')) {
+  const base = q.get('fonts');
+  const faces = [[300, 'Light'], [400, 'Regular'], [500, 'Medium'], [700, 'Bold']]
+    .map(([w, n]) => `@font-face{font-family:Roboto;font-weight:${w};src:url(${base}Roboto-${n}.woff2) format('woff2')}`).join('');
+  document.head.insertAdjacentHTML('beforeend', `<style>${faces}</style>`);
+}
+
+if (q.get('now') !== 'real') {
+  const fixed = new Date(q.get('now') || '2026-10-06T13:24:00').getTime();
+  const RealDate = Date;
+  const offset = fixed - RealDate.now();
+  class FakeDate extends RealDate {
+    constructor(...args) { args.length ? super(...args) : super(RealDate.now() + offset); }
+    static now() { return RealDate.now() + offset; }
+  }
+  window.Date = FakeDate;
+}
+
+if (!customElements.get('ha-card')) {
+  customElements.define('ha-card', class extends HTMLElement {
+    constructor() {
+      super();
+      this.attachShadow({ mode: 'open' }).innerHTML = `<style>:host{display:block;background:var(--ha-card-background,var(--card-background-color));border-radius:var(--ha-card-border-radius,12px);border:1px solid var(--ha-card-border-color,var(--divider-color));color:var(--primary-text-color);transition:none}</style><slot></slot>`;
+    }
+  });
+}
+</script>
+<script src="../dist/doorstep-card.js"></script>
+<script>
+const at = (h, m = 0, dayOffset = 0) => {
+  const d = new Date();
+  d.setDate(d.getDate() + dayOffset);
+  d.setHours(h, m, 0, 0);
+  return d.toISOString();
+};
+const dayOnly = (dayOffset) => [at(0, 0, dayOffset), at(23, 59, dayOffset).replace('.000Z', '.000Z')];
+
+const parcel = (o) => ({
+  carrier: 'DHL', sender: null, receiver: null, status: 'in_transit', raw_status: null, delivered: false,
+  delivered_at: null, planned_from: null, planned_to: null, pickup: false, pickup_point: null,
+  url: `https://www.dhl.de/de/privatkunden/pakete-empfangen/verfolgen.html?piececode=${o.barcode}`,
+  weight: null, dimensions: null, history: null, raw: {}, ...o,
+});
+
+const history = (...steps) => steps.map(([status, h, m, d = 0, raw = null]) => ({ timestamp: at(h, m, d), status, raw_status: raw }));
+
+const P = {
+  zalando: parcel({ barcode: '00340434161094042557', sender: 'Zalando', status: 'out_for_delivery', planned_from: at(13, 50), planned_to: at(15, 20),
+    history: history(['registered', 18, 2, -2], ['in_transit', 9, 41, -1, 'Die Sendung wurde im Start-Paketzentrum bearbeitet.'], ['in_transit', 4, 12, 0, 'Die Sendung wurde im Ziel-Paketzentrum bearbeitet.'], ['out_for_delivery', 8, 5, 0, 'Die Sendung wurde in das Zustellfahrzeug geladen.']) }),
+  apotheke: parcel({ barcode: 'JJD000390007702581342', sender: 'Shop Apotheke', planned_from: dayOnly(0)[0], planned_to: dayOnly(0)[1] }),
+  ikea: parcel({ carrier: 'DPD', barcode: '01505012345678', sender: 'IKEA', planned_from: at(10, 0, 1), planned_to: at(12, 0, 1), url: 'https://tracking.dpd.de/status/de_DE/parcel/01505012345678' }),
+  thomann: parcel({ carrier: 'Hermes', barcode: 'H1003270391245601023', sender: 'Thomann', status: 'registered', url: null }),
+  gls: parcel({ carrier: 'GLS', barcode: '91234567890', sender: 'Bergfreunde', planned_from: dayOnly(3)[0], planned_to: dayOnly(3)[1] }),
+  amazon: parcel({ barcode: '00340434161094011223', sender: 'Amazon', status: 'delivered', delivered: true, delivered_at: at(9, 12) }),
+  packstation: parcel({ barcode: '00340434161094099001', sender: 'MediaMarkt', status: 'at_pickup_point', pickup: true, pickup_point: 'Packstation 128' }),
+  problem: parcel({ carrier: 'DPD', barcode: '01505098765432', sender: 'Otto', status: 'problem', raw_status: 'Adresse unvollständig, Zustellung nicht möglich', url: null }),
+  longnames: parcel({ barcode: '00340434161094077777', sender: 'Otto Versand Hamburg-Bramfeld GmbH & Co. KG', status: 'at_pickup_point', pickup: true, pickup_point: 'DHL Paketshop Schreibwaren Müller, Ludwigstraße 14' }),
+  returnZ: parcel({ barcode: '00340434161094055555', sender: null, receiver: 'Zalando Retouren', status: 'in_transit' }),
+  stale: parcel({ carrier: 'Hermes', barcode: 'H1003270391245609999', sender: 'Otto', planned_from: dayOnly(-4)[0], planned_to: dayOnly(-4)[1] }),
+  nameless: parcel({ carrier: 'DPD', barcode: '01505011112222', sender: null, planned_from: at(16, 30), planned_to: at(17, 30) }),
+};
+
+const scenarios = {
+  today: { dhl: [P.zalando, P.apotheke, P.thomann], dhlDelivered: [P.amazon], dpd: [P.ikea], gls: [P.gls] },
+  pickup: { dhl: [P.packstation, P.thomann], dpd: [P.ikea], gls: [] },
+  upcoming: { dhl: [P.thomann], dpd: [P.ikea], gls: [P.gls] },
+  problem: { dhl: [P.thomann], dpd: [P.problem, P.ikea], gls: [] },
+  delivered: { dhl: [], dhlDelivered: [P.amazon], dpd: [P.ikea], gls: [] },
+  empty: { dhl: [], dpd: [], gls: [] },
+  setup: null,
+  offline: { offline: true },
+  many: {
+    dhl: [P.zalando, P.apotheke, P.thomann, P.packstation, ...[1, 2, 3, 4].map((i) => parcel({ barcode: `0034043416109400${i}000`, sender: ['Galaxus', 'Decathlon', 'Rossmann', 'Tchibo'][i - 1], planned_from: dayOnly(i)[0], planned_to: dayOnly(i)[1] }))],
+    dhlDelivered: [P.amazon], dpd: [P.ikea, P.nameless], gls: [P.gls],
+  },
+  outgoing: { dhl: [P.zalando], dpd: [P.ikea], gls: [], dhlOut: [P.returnZ] },
+  long: { dhl: [P.longnames], dpd: [P.ikea], gls: [] },
+  stale: { dhl: [P.stale], dpd: [P.ikea], gls: [] },
+  sentonly: { dhl: [], dpd: [], gls: [], dhlOut: [P.returnZ] },
+  aggregated: { dhl: [P.zalando], dpd: [P.ikea], gls: [], aggregator: [P.zalando, P.ikea] },
+};
+
+function makeHass(name) {
+  const s = scenarios[name];
+  const states = {
+    'sun.sun': { entity_id: 'sun.sun', state: 'above_horizon', attributes: {} },
+    'sensor.kitchen_temperature': { entity_id: 'sensor.kitchen_temperature', state: '21.4', attributes: { unit_of_measurement: '°C' } },
+  };
+  const entities = {};
+  const add = (id, platform, key, parcels, state) => {
+    states[id] = { entity_id: id, state: state ?? String(parcels.length), last_updated: '2026-10-06T11:20:00Z', attributes: state === 'unavailable' ? {} : { parcels, unit_of_measurement: 'parcels' } };
+    entities[id] = { entity_id: id, platform, translation_key: key };
+  };
+  if (s && s.offline) {
+    add('sensor.dhl_me_example_com_incoming_parcels', 'dhl', 'incoming_parcels', [], 'unavailable');
+  } else if (s) {
+    add('sensor.dhl_me_example_com_incoming_parcels', 'dhl', 'incoming_parcels', s.dhl || []);
+    add('sensor.dhl_me_example_com_delivered_parcels', 'dhl', 'delivered_parcels', s.dhlDelivered || []);
+    add('sensor.dhl_me_example_com_outgoing_parcels', 'dhl', 'outgoing_parcels', s.dhlOut || []);
+    add('sensor.dhl_me_example_com_awaiting_pickup', 'dhl', 'awaiting_pickup', (s.dhl || []).filter((p) => p.status === 'at_pickup_point'));
+    add('sensor.dpd_me_example_com_incoming_parcels', 'dpd', 'incoming_parcels', s.dpd || []);
+    add('sensor.gls_eingehende_pakete', 'gls', 'incoming_parcels', s.gls || []);
+    if (s.aggregator) add('sensor.parcels_incoming', 'parcel_aggregator', 'incoming', s.aggregator);
+  }
+  return {
+    states,
+    entities,
+    language: q.get('lang') || 'en',
+    locale: { language: q.get('lang') || 'en', time_format: q.get('tf') || 'language', time_zone: 'local' },
+    config: { time_zone: 'Europe/Berlin' },
+    themes: { darkMode: q.get('theme') === 'dark' },
+  };
+}
+
+document.body.classList.add(q.get('theme') === 'dark' ? 'dark' : 'light');
+if (q.get('bg') === 'wallpaper') document.body.classList.add('wallpaper');
+
+const slot = document.getElementById('slot');
+slot.style.width = (q.get('w') || 420) + 'px';
+if (q.get('h')) slot.style.height = q.get('h') + 'px';
+
+const card = document.createElement('doorstep-card');
+const config = { type: 'custom:doorstep-card' };
+for (const k of ['size', 'title', 'appearance', 'layout', 'max_items']) if (q.get(k)) config[k] = q.get(k);
+for (const k of ['show_outgoing', 'show_delivered', 'hide_when_empty']) if (q.get(k)) config[k] = q.get(k) === 'true';
+card.setConfig(config);
+card.hass = makeHass(q.get('scenario') || 'today');
+slot.appendChild(card);
+window.__card = card;
+window.__makeHass = makeHass;
+</script>
+</body>
+</html>
